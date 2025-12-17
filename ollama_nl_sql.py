@@ -38,34 +38,79 @@ class OllamaNLtoSQL:
             return False
     
     def _get_default_schema(self) -> str:
-        """Get default database schema information"""
+        """Get concise database schema with EXACT column names"""
         return """
-DATABASE SCHEMA (SQLite):
+DATABASE: Agent Platform (SQLite)
 
--- Main entity tables
-workspaces: id, name, owner_id, created_at, plan (free/pro/enterprise), status (active/suspended)
-users: id, email, name, workspace_id, role (admin/member/viewer), created_at
-agents: id, workspace_id, name, language (en/hi/gu/ta/te/mr/bn/kn/ml/pa), llm_model, status, created_at
-integrations: id, workspace_id, type (hubspot/zoho/twilio/plivo/slack/custom), config, status, last_sync_at, created_at
+IMPORTANT: Use EXACT column names shown below!
 
--- Execution tables
-agent_tools: id, agent_id, tool_name, tool_config, created_at
-agent_runs: id, agent_id, workspace_id, run_type (live_call/test_call/cron_job/webhook), status (success/failed/partial), duration_ms, started_at, completed_at
-test_runs: id, agent_id, workspace_id, test_input, expected_output, actual_output, result (pass/fail), error_message, created_at
-run_logs: id, run_id, step, event_type (llm_call/tool_call/user_input/system), message, payload, timestamp
+TABLES WITH EXACT COLUMNS:
 
--- Error and sync tracking
-errors: id, run_id, workspace_id, source (integration/agent/llm/tool), code, message, metadata, created_at
-integration_sync_logs: id, integration_id, workspace_id, sync_type (contacts/deals/activities), status, items_synced, error_message, created_at
+workspaces:
+  id, name, owner_id, created_at, plan, status
 
--- Analytics tables
-billing_usage: id, workspace_id, agent_id, characters_generated, calls_made, tokens_used, total_cost_usd, created_at
-audit_events: id, workspace_id, user_id, action (create/update/delete), entity, before, after, created_at
+users:
+  id, email, name, workspace_id, role, created_at
 
-NOTES:
-- This is SQLite, use: datetime('now'), datetime('now', '-7 days')
-- Language codes: en=English, hi=Hindi, gu=Gujarati, ta=Tamil, etc.
-- All IDs are TEXT (UUIDs stored as strings)
+agents:
+  id, workspace_id, name, language, llm_model, status, created_at
+
+integrations:
+  id, workspace_id, type, config, status, last_sync_at, created_at
+
+agent_tools:
+  id, agent_id, tool_name, tool_config, created_at
+
+agent_runs:
+  id, agent_id, workspace_id, run_type, status, duration_ms, started_at, completed_at
+
+test_runs:
+  id, agent_id, workspace_id, test_input, expected_output, actual_output, result, error_message, created_at
+
+run_logs:
+  id, run_id, step, event_type, message, payload, timestamp
+
+errors:
+  id, run_id, workspace_id, source, code, message, metadata, created_at
+
+integration_sync_logs:
+  id, integration_id, workspace_id, sync_type, status, items_synced, error_message, created_at
+
+billing_usage:
+  id, workspace_id, agent_id, characters_generated, calls_made, tokens_used, total_cost_usd, created_at
+
+audit_events:
+  id, workspace_id, user_id, action, entity, before, after, created_at
+
+COLUMN VALUES:
+- plan: 'free', 'pro', 'enterprise'
+- status: 'active', 'suspended', 'inactive'
+- role: 'admin', 'member', 'viewer'
+- language: 'en', 'hi', 'gu', 'ta', 'te', 'mr', 'bn', 'kn', 'ml', 'pa'
+- result: 'pass', 'fail'
+- run_type: 'live_call', 'test_call', 'cron_job', 'webhook'
+- event_type: 'llm_call', 'tool_call', 'user_input', 'system'
+- source: 'integration', 'agent', 'llm', 'tool'
+
+RELATIONSHIPS:
+- workspaces.id → users.workspace_id, agents.workspace_id, integrations.workspace_id
+- agents.id → agent_runs.agent_id, test_runs.agent_id, agent_tools.agent_id
+- agent_runs.id → run_logs.run_id, errors.run_id
+
+TIME FILTERS (SQLite):
+- Last 24h: WHERE created_at >= datetime('now', '-24 hours')
+- Last 7d: WHERE created_at >= datetime('now', '-7 days')
+- Today: WHERE date(created_at) = date('now')
+
+EXAMPLES:
+Q: "Top 5 errors last 24h"
+A: SELECT code, message, COUNT(*) as cnt FROM errors WHERE created_at >= datetime('now', '-24 hours') GROUP BY code, message ORDER BY cnt DESC LIMIT 5
+
+Q: "All Hindi agents"
+A: SELECT name FROM agents WHERE language='hi' AND status='active'
+
+Q: "Failed runs today"
+A: SELECT * FROM agent_runs WHERE status='failed' AND date(started_at)=date('now') ORDER BY started_at DESC
 """
     
     def parse_question(self, question: str) -> Tuple[Optional[str], Optional[str]]:
@@ -79,18 +124,16 @@ NOTES:
             Tuple of (sql_query, explanation)
         """
         try:
-            prompt = f"""You are a SQL expert. Convert this natural language question into a SQLite query.
+            prompt = f"""Convert this question to SQLite query.
 
 {self.schema_info}
 
 RULES:
-1. Return ONLY the SQL query, nothing else
-2. Do NOT include explanations, markdown, or code blocks
-3. Use proper SQLite syntax
-4. Use appropriate JOINs when needed
-5. For time queries use: datetime('now', '-N days/hours')
-6. Query must be SELECT only (read-only)
-7. Add ORDER BY and LIMIT when appropriate
+- Return ONLY SQL query, no explanations
+- Use SQLite syntax with datetime() for time filters
+- Use JOINs for related tables
+- SELECT only (read-only)
+- Add ORDER BY and LIMIT
 
 QUESTION: {question}
 
@@ -108,7 +151,7 @@ SQL:"""
                         "top_p": 0.9,
                     }
                 },
-                timeout=30
+                timeout=100  # 1 minutes timeout for slower models
             )
             
             if response.status_code != 200:
@@ -127,13 +170,13 @@ SQL:"""
             if not sql.upper().startswith('SELECT'):
                 return None, "Only SELECT queries are allowed for safety."
             
-            explanation = f"Generated SQL using Ollama ({self.model})"
+            explanation = f"Generated SQL using Local AI ({self.model})"
             return sql, explanation
             
         except requests.exceptions.Timeout:
-            return None, "Ollama request timed out. The model might be slow or not loaded."
+            return None, "Local AI request timed out. The model might be slow or not loaded."
         except requests.exceptions.ConnectionError:
-            return None, "Cannot connect to Ollama. Make sure Ollama is running."
+            return None, "Cannot connect to Local AI. Make sure Ollama service is running."
         except Exception as e:
             return None, f"Error generating SQL: {str(e)}"
     
@@ -170,23 +213,43 @@ SQL:"""
         return sql
     
     def get_suggestions(self) -> list:
-        """Get list of example questions"""
+        """Get list of example questions based on actual database content"""
         return [
-            "Top 5 errors for the last 24 hours",
-            "Show all failed test runs from last week",
-            "Which integrations are inactive",
-            "List all agents using Gujarati language",
-            "Show all workspaces with more than 5 agents",
-            "What are the most expensive workspaces by billing?",
-            "How many agents are there in total?",
-            "Errors by source in the last month",
-            "Agent runs by status",
-            "Show me the top 10 workspaces by token usage",
-            "List all successful test runs today",
-            "Which agents have the longest average run duration?",
-            "Show me all HubSpot integrations that failed to sync",
-            "What are the most common error codes?",
-            "Show billing usage for the last 30 days"
+            # Workspace queries
+            "Show all workspaces and their plans",
+            "Which workspaces are on enterprise plan?",
+            "List suspended workspaces",
+            "Count agents per workspace",
+            
+            # Agent queries
+            "Show all agents using Hindi language",
+            "List all Gujarati and Tamil agents",
+            "Show inactive or draft agents",
+            "How many agents use each language?",
+            
+            # Error and failure analysis
+            "Top 5 error codes from last week",
+            "Show all errors from integration source",
+            
+            
+            # Test and run analysis
+            "Show all failed test runs from last month",
+            "Which runs took longer than 5 seconds?",
+            
+            # Integration queries
+            "Which integrations failed to sync?",
+            "List inactive integrations",
+            
+            # Billing and usage
+            "Total billing cost by workspace",
+            "Show top 5 workspaces by total cost",
+            "Billing usage for last 30 days",
+            
+            # User queries
+            "How many admin users per workspace?",
+            
+            # Complex queries
+            "Most common error messages",
         ]
     
     def get_available_models(self) -> list:

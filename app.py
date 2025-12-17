@@ -51,11 +51,11 @@ with st.sidebar:
             help="sqlite:///path/to/database.db"
         )
         
-        st.markdown("### 🏠 Ollama (Local LLM)")
-        st.info("Using Ollama for completely private and free NL-to-SQL conversion.")
+        st.markdown("### 🏠 Local AI Model")
+        st.info("Using local AI model for completely private and free NL-to-SQL conversion.")
         
         new_ollama_model = st.text_input(
-            "Ollama Model",
+            "AI Model",
             value=st.session_state.ollama_model,
             help="Recommended: llama3.1, mistral, codellama, deepseek-coder"
         )
@@ -72,11 +72,11 @@ with st.sidebar:
             try:
                 st.session_state.nl_parser = OllamaNLtoSQL(model=new_ollama_model)
                 st.session_state.parser_type = "ollama"
-                st.success(f"✅ Using Ollama ({new_ollama_model})")
+                st.success(f"✅ Using Local AI ({new_ollama_model})")
             except Exception as e:
                 st.session_state.nl_parser = LocalNLtoSQL()
                 st.session_state.parser_type = "local"
-                st.error(f"❌ Ollama not available. Install from: https://ollama.ai")
+                st.error(f"❌ Local AI not available. Install Ollama from: https://ollama.ai")
                 st.error(f"Error: {str(e)[:200]}")
             
             st.rerun()
@@ -277,9 +277,9 @@ with tab1:
     # Show parser type and example questions
     parser_type = st.session_state.get('parser_type', 'local')
     if parser_type == 'ollama':
-        st.success("🏠 **Using Ollama (Local LLM)** - 100% Private & Free!")
+        st.success("🏠 **Using Local AI Model** - 100% Private & Free!")
     else:
-        st.warning("⚠️ **Ollama not available** - Using basic pattern matching. Install Ollama from: https://ollama.ai")
+        st.warning("⚠️ **Local AI not available** - Using basic pattern matching. Install Ollama from: https://ollama.ai")
     
     with st.expander("📝 Example Questions You Can Ask"):
         suggestions = nl_parser.get_suggestions()
@@ -572,6 +572,6 @@ with tab3:
 st.divider()
 parser_type = st.session_state.get('parser_type', 'local')
 if parser_type == 'ollama':
-    st.caption("🏠 Powered by Ollama - Local LLM Running on Your Machine | 100% Private & Free")
+    st.caption("🏠 Powered by Local AI - Running on Your Machine | 100% Private & Free")
 else:
-    st.caption("⚠️ Pattern Matching Mode - Install Ollama for AI: https://ollama.ai")
+    st.caption("⚠️ Pattern Matching Mode - Install Ollama for Local AI: https://ollama.ai")
